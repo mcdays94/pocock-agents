@@ -1,51 +1,48 @@
 # pocock-agents
 
-A pair of [OpenCode](https://opencode.ai/) agents that turn [Matt Pocock](https://www.mattpocock.com/)'s skill-driven development workflow into something you can run end-to-end: grill an idea (and harden the domain glossary as you go), synthesize a PRD, break it into issues, and dispatch parallel workers that each execute one issue on an isolated git worktree using TDD.
+Two [OpenCode](https://opencode.ai/) agents that run [Matt Pocock](https://www.aihero.dev/)'s skill-driven engineering flow end to end: grill an idea until it's sharp, turn it into a spec and tickets, build the tickets test-first with parallel workers in isolated git worktrees, review the result, and look back with a retro.
 
-Blog post with the full rationale and walkthrough: **[How I cloned Matt Pocock into OpenCode Agents](https://mdias.info/posts/cloning-matt-pocock-opencode/)**.
+Blog post with the original rationale: **[How I cloned Matt Pocock into OpenCode Agents](https://mdias.info/posts/cloning-matt-pocock-opencode/)**. The flow has changed twice since then; this README is current.
 
-> **2026-05 update.** Matt landed a major refactor of [`mattpocock/skills`](https://github.com/mattpocock/skills) between 2026-04-28 and 2026-05-07 — renamed several skills, deprecated others, introduced `CONTEXT.md` + `docs/adr/` as the domain-doc convention, and added `diagnose`, `prototype`, `grill-with-docs`, `triage`, `to-prd`, `to-issues`, `setup-matt-pocock-skills`, `zoom-out`, `handoff`, and `caveman`. These agents have been re-aligned with that refactor. See [What's new](#whats-new) below.
+> **2026-10 update.** Re-synced with [`mattpocock/skills`](https://github.com/mattpocock/skills) v1.3 (`main` at `d81f3a1`, 2026-09-29). Since the May sync Matt shipped v1.0 to v1.3: `to-prd` became `to-spec`, `to-issues` became `to-tickets`, `diagnose` became `diagnosing-bugs`, a dozen skills were removed, `CONTEXT.md` became `GLOSSARY.md`, and `implement-spec` now does the parallel build these agents used to improvise. This update also fixes a bug that predates it: under OpenCode's last-match-wins permission rule the worker couldn't load any skill, `tdd` included. See [CHANGELOG.md](./CHANGELOG.md) for the details and upgrade steps.
 
 ## The agents
 
 | File | Role |
 | --- | --- |
-| [`agents/pocock.md`](./agents/pocock.md) | **Orchestrator.** Loads Matt's skills on-demand through a phased workflow (`grill-with-docs` → `prototype` → `to-prd` → `to-issues` → dispatch), manages git worktrees, and coordinates parallel workers. |
-| [`agents/pocock-worker.md`](./agents/pocock-worker.md) | **Subagent.** Takes a single issue and a pre-created worktree, loads `tdd` (and `diagnose` when bugs fight back), follows red-green-refactor, pushes a branch, and opens a PR/MR. |
+| [`agents/pocock.md`](./agents/pocock.md) | **Orchestrator** (primary agent). Routes with Matt's `ask-matt`, walks the flow phase by phase, asks before each step Matt meant a person to start, and runs `implement-spec` with OpenCode worktrees and parallel workers. |
+| [`agents/pocock-worker.md`](./agents/pocock-worker.md) | **Implementer** (subagent). Takes one ticket and a prepared worktree, builds it with `tdd` at the seams the spec agreed, merges the integration branch tip into its branch, and reports back. Never pushes. |
+
+Matt's skills hold the discipline; these agents only supply what the skills expect from the tool they run in. `implement-spec` assumes every implementer gets its own git worktree, and OpenCode's task tool doesn't do that, so pocock creates the worktrees, runs the merges, and gives the worker permissions that keep it inside its worktree.
 
 ## Prerequisites
 
-These agents **depend on** [Matt Pocock's skills](https://github.com/mattpocock/skills). They reference, among others:
+1. **OpenCode.** Tested with v1.18.33.
+2. **Matt's skills, installed for OpenCode:**
 
-- **Engineering**: `grill-with-docs`, `to-prd`, `to-issues`, `triage`, `tdd`, `diagnose`, `prototype`, `zoom-out`, `improve-codebase-architecture`, `setup-matt-pocock-skills`
-- **Productivity**: `grill-me`, `write-a-skill`, `caveman`
-- **In-progress**: `handoff`
-- **Cloudflare-flavored** (loaded contextually when a project's signals match): `cloudflare`, `workers-best-practices`, `wrangler`, `durable-objects`, `agents-sdk`, `sandbox-sdk`, `cloudflare-email-service`, `playwright-skill`
+   ```bash
+   npx skills@latest add mattpocock/skills -a opencode
+   ```
 
-Install Matt's skills first — they're the actual engineering discipline; these agents just orchestrate them.
+   Add `-g` to install for your user rather than the current project. Global installs land in `~/.agents/skills/`, project installs in `.agents/skills/`, and OpenCode reads both. Take at least the engineering and productivity skills, and make sure `setup-matt-pocock-skills` is among them.
 
-The simplest path is the [`skills.sh`](https://skills.sh/mattpocock/skills) installer (recommended by Matt):
+   Matt's Claude Code plugin (`claude plugins install mattpocock-skills`) won't help here: OpenCode doesn't read Claude Code plugins. If you'd rather track Matt's repo directly, clone it and symlink the folders under `skills/engineering/` and `skills/productivity/` into `~/.config/opencode/skills/`.
 
-```bash
-npx skills@latest add mattpocock/skills
-```
+3. **One global permission rule (recommended).** Both agents may work in `/tmp/pocock-workers`, where the worktrees live. The built-in subagents pocock starts (`general` for exploration notes) don't inherit that, so without this rule OpenCode asks you before they touch the worktree root. Add it to `~/.config/opencode/opencode.json`:
 
-Or do it manually by copying each skill into a flat `~/.config/opencode/skills/<skill-name>/` layout:
+   ```json
+   {
+     "$schema": "https://opencode.ai/config.json",
+     "permission": {
+       "external_directory": {
+         "/tmp/pocock-workers/*": "allow",
+         "/private/tmp/pocock-workers/*": "allow"
+       }
+     }
+   }
+   ```
 
-```bash
-# Clone to a temp location
-git clone --depth 1 https://github.com/mattpocock/skills /tmp/mp-skills
-
-# Copy the skills you want into ~/.config/opencode/skills/ (flat structure expected by OpenCode)
-mkdir -p ~/.config/opencode/skills
-for cat in engineering productivity in-progress misc personal; do
-  for skill in /tmp/mp-skills/skills/$cat/*/; do
-    cp -R "$skill" ~/.config/opencode/skills/
-  done
-done
-```
-
-Note: Matt's repo nests skills under `skills/<category>/<name>/` but OpenCode expects them flat at `~/.config/opencode/skills/<name>/`. The script above flattens that for you.
+   The second line is for macOS, where `/tmp` resolves to `/private/tmp`.
 
 ## Installation
 
@@ -55,88 +52,88 @@ curl -o ~/.config/opencode/agents/pocock.md https://raw.githubusercontent.com/mc
 curl -o ~/.config/opencode/agents/pocock-worker.md https://raw.githubusercontent.com/mcdays94/pocock-agents/main/agents/pocock-worker.md
 ```
 
-Or clone this repo and symlink the files into `~/.config/opencode/agents/`.
+Or clone this repo and symlink the two files into `~/.config/opencode/agents/`.
+
+Check the install without spending tokens, from inside any git repo:
+
+```bash
+opencode debug agent pocock-worker --tool skill --params '{"name":"tdd"}'      # prints the tdd skill
+opencode debug agent pocock-worker --tool skill --params '{"name":"to-spec"}'  # refused
+```
 
 ## Per-repo setup
 
-Many of Matt's engineering skills now read per-repo configuration that's seeded by `setup-matt-pocock-skills`. The first time you use Pocock in a new repo, the orchestrator will detect that `docs/agents/issue-tracker.md` is missing and run that skill to scaffold:
+Run `/setup-matt-pocock-skills` once per repo, or let pocock offer it the first time a step needs the issue tracker. It records:
 
-- **Issue tracker** — GitHub (via `gh`), GitLab (via `glab`), or local markdown under `.scratch/<feature>/`. Pocock will dispatch workers using whichever you choose.
-- **Triage label vocabulary** — five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) plus two categories (`bug`, `enhancement`), mapped to whatever label strings your tracker actually uses.
-- **Domain doc layout** — single-context (`CONTEXT.md` + `docs/adr/` at the root) or multi-context (`CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files, typical for monorepos).
+- **Issue tracker**: GitHub (`gh`), GitLab (`glab`), local markdown (`.scratch/<feature>/spec.md` plus one file per ticket under `.scratch/<feature>/issues/`), or a workflow you describe.
+- **Triage labels**: the five canonical roles, asked about only when `triage` is installed.
+- **Domain docs**: `GLOSSARY.md` and `docs/adr/` at the root, or `GLOSSARY-MAP.md` for monorepos.
 
-You don't need to run it pre-emptively — it's lazy. The orchestrator triggers it the first time a hard-dependency skill (`to-prd`, `to-issues`, `triage`) actually needs the config.
+It writes `docs/agents/*.md` and an `## Agent skills` block into `CLAUDE.md` if that file exists, otherwise `AGENTS.md`. OpenCode loads only the first of `AGENTS.md` and `CLAUDE.md` it finds, so in a repo that has both, move the block into `AGENTS.md`.
+
+Coming from an older setup? Rename the glossary (`git mv CONTEXT.md GLOSSARY.md`, and `CONTEXT-MAP.md` likewise): Matt's skills only look for the new name.
 
 ## Usage
 
-Start an OpenCode session with the orchestrator:
+Start OpenCode with pocock selected (or press Tab to switch to it) and describe what you want:
 
+```bash
+opencode --agent pocock
+> I want to build X
 ```
-opencode
-> @pocock I want to build X
-```
 
-The default flow for a new code feature:
+The main flow, which follows Matt's `ask-matt`:
 
-1. **`grill-with-docs`** interrogates the idea and writes domain terms to `CONTEXT.md` and load-bearing decisions to `docs/adr/` as you go.
-2. **`prototype`** (optional) — when a logic or UI question is faster to answer with throwaway code than with prose.
-3. **`to-prd`** synthesizes the conversation into a PRD and publishes it to your configured issue tracker. (It does **not** re-interview — that already happened in step 1.)
-4. **`to-issues`** breaks the PRD into independently-grabbable, vertically-sliced issues with `ready-for-agent` labels.
-5. **Dispatch** — the orchestrator creates one git worktree per ready issue and dispatches `pocock-worker` subagents in parallel, grouped into dependency waves.
-6. Each worker loads `tdd` (and `diagnose` if the bug fights back), red-green-refactors, pushes its branch, opens a PR/MR.
+1. **Grill.** pocock loads `grilling` and `domain-modeling` and interviews you in numbered rounds, each question with a recommended answer. Terms land in `GLOSSARY.md` and hard-to-reverse decisions in `docs/adr/` as they're settled.
+2. **Prototype** (optional), when a question needs running code to settle it.
+3. **Spec.** `to-spec` writes the spec from the conversation and confirms the test seams with you.
+4. **Tickets.** `to-tickets` splits the spec into tracer-bullet tickets, each declaring which tickets block it.
+5. **Build.** `implement` for a single ticket, or `implement-spec` for the whole spec. For `implement-spec`, pocock creates an integration branch (`spec/<slug>`) and one worktree per ready ticket under `/tmp/pocock-workers/`, runs a `pocock-worker` in each (in parallel), fast-forwards finished tickets into the integration branch, and starts tickets as their blockers land.
+6. **Review.** One `code-review` pass over the integration branch, one round of fixes, then a draft PR if your tracker closes work through PRs.
+7. **Retro.** `retro` suggests changes to the environment (checks, standards, pointers) based on what went wrong.
 
-Other entry points (bug reports, performance regressions, refactors, architecture reviews) are mapped in the orchestrator's `Entry Points` table — see [`agents/pocock.md`](./agents/pocock.md). See the [blog post](https://mdias.info/posts/cloning-matt-pocock-opencode/) for the original full walkthrough; the post-2026-05 flow differs in a few places (`grill-with-docs` instead of `grill-me` + `ubiquitous-language`, `to-prd`/`to-issues` instead of `write-a-prd`/`prd-to-issues`, `diagnose` for hard bugs, `triage` instead of `qa`/`triage-issue`/`github-triage`).
+Before each step that Matt's skills expect a person to start (`to-spec`, `to-tickets`, `implement-spec`, `retro`, ...), pocock proposes it and waits for your yes. OpenCode doesn't enforce that split itself. In OpenCode v1 every skill is also a slash command, so you can run any step by hand (`/to-spec`), with or without pocock.
 
-## What's new
+Other entry points (incoming bug reports with `triage`, hard bugs with `diagnosing-bugs`, foggy multi-session efforts with `wayfinder`, codebase health with `improve-codebase-architecture`) are mapped in [`agents/pocock.md`](./agents/pocock.md).
 
-If you set this up before May 2026, here's what changed in this update:
+**Parallelism.** OpenCode v1 runs subagents in the background only with `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`. With it, pocock starts each ticket the moment its last blocker merges; without it, workers run in batches and pocock recomputes the ready set after each batch.
 
-**Renamed skills** (1-for-1 replacements; old names are no longer loaded by the orchestrator):
-
-| Old | New |
-| --- | --- |
-| `prd-to-issues` | `to-issues` (now accepts any plan/spec, not just PRDs) |
-| `write-a-prd` | `to-prd` (no longer interviews — synthesizes existing context) |
-| `github-triage` | `triage` (issue-tracker agnostic) |
-
-**Deprecated** (folded into other skills):
-
-| Old | Replacement |
-| --- | --- |
-| `triage-issue` | `triage` (one skill, three modes: incoming triage, reproduce, agent brief) |
-| `qa` | `triage` |
-| `design-an-interface` | `prototype` (empirical throwaway code, not theoretical sub-agent designs) |
-| `ubiquitous-language` | `grill-with-docs` (writes `CONTEXT.md` inline as terms get sharpened) |
-| `request-refactor-plan` | `grill-with-docs` → `to-prd` → `to-issues` (the regular pipeline) |
-
-**New skills** referenced by the orchestrator:
-
-- `diagnose` — 6-phase debugging discipline (build feedback loop → reproduce → hypothesise → instrument → fix+regression test → cleanup). Genuinely the strongest practical addition; Phase 1 ("build a feedback loop") is the actual skill.
-- `prototype` — throwaway code to answer a design question, in two branches: terminal app for state/logic, multi-variation UI for visual design.
-- `grill-with-docs` — grilling that writes `CONTEXT.md` and ADRs inline as decisions land.
-- `zoom-out` — tiny "give me a higher-level map of this code using the project's domain language" prompt.
-- `handoff` — long-session handoff document for a fresh agent to pick up.
-- `caveman` — token-saving compressed mode (~75% reduction in filler).
-- `setup-matt-pocock-skills` — per-repo scaffolder for issue tracker, triage labels, domain doc layout.
-
-**Paradigm shifts**:
-
-- `UBIQUITOUS_LANGUAGE.md` → `CONTEXT.md` (single-context) or `CONTEXT-MAP.md` + per-context `CONTEXT.md` (monorepos). The new format lives next to `docs/adr/` for Architecture Decision Records.
-- Issue-tracker abstraction — the orchestrator is no longer GitHub-only. Workers dispatch using `gh`, `glab`, or local-markdown writes depending on `docs/agents/issue-tracker.md`.
-- `to-prd` no longer interviews. Grilling is a separate, earlier phase.
+**PR per ticket.** Ask for it and pocock branches every ticket from the default branch instead, opens one PR per ticket, and waits for blockers' PRs to merge before starting the tickets they block. Workers still never push; pocock does.
 
 ## Customization
 
-The agents are plain markdown. Open them, read them, and edit anything that doesn't fit your workflow. A few things you'll likely want to tune:
+The agents are plain markdown; edit anything that doesn't fit.
 
-- **Context-triggered skills table** in `pocock.md` — the default triggers are Cloudflare-Workers-flavored (`wrangler.toml`, Durable Objects, `@xyflow/react`, Playwright). Swap in the signals that match your stack.
-- **Model choice** — both agents default to `anthropic/claude-opus-4-7`. Change the `model:` frontmatter to whatever you have configured.
-- **Permissions** — the worker denies `git push --force`, `git reset --hard`, and `git clean` by default. Loosen or tighten as needed.
-- **Worker skill allow-list** — the worker can load `tdd`, `diagnose`, `triage`, `grill-with-docs`, `prototype`, `zoom-out`, `to-issues`, `improve-codebase-architecture`, plus the contextual ones (`react-flow`, `playwright-skill`, Cloudflare suite, `portless`). Add or remove based on what you want workers to be able to invoke autonomously.
+- **Stack skills.** The table at the end of `pocock.md` loads skills when it sees their signals. The defaults are for Cloudflare Workers, React Flow and Playwright projects; swap in your own and keep the worker's `skill:` allow-list in step.
+- **Model.** Both agents pin a model in their `model:` frontmatter. Change it, or delete the line to use your OpenCode default.
+- **Permissions.** OpenCode applies the **last** matching rule, so keep `"*"` first and exceptions after it. Patterns match each command's full text, which is why the worker denies both `git push*` and `git -C * push*`.
+- **Worktree root.** `/tmp/pocock-workers`. If you move it, update the `external_directory` rules in both agents and in your global config.
+- **task-observer.** If you have a `task-observer` skill installed, pocock loads it at session start; otherwise it skips that step.
+
+## Keeping up with upstream
+
+Matt's skills move fast: the May version of these agents was broken by June. [`scripts/check-skills.sh`](./scripts/check-skills.sh) clones `mattpocock/skills` and fails if either agent names a skill that upstream has renamed or removed, or if the worker is allowed a skill that needs a person. [A GitHub Action](./.github/workflows/check-skills.yml) runs it weekly and on every change to the agents.
+
+```bash
+scripts/check-skills.sh                  # clones upstream into a temp dir
+scripts/check-skills.sh ~/src/mp-skills  # or uses an existing clone
+```
+
+## Testing
+
+[`test/smoke/`](./test/smoke/) is a Docker smoke test; it runs the same under OrbStack, Docker Desktop or plain Docker. It installs OpenCode, Matt's skills and these agents into a container, then runs the checks against a tiny fixture project that already has a spec and three tickets (two independent, one blocked by both) on a local-markdown tracker.
+
+```bash
+docker build -f test/smoke/Dockerfile -t pocock-smoke .
+docker run --rm pocock-smoke                         # deterministic checks, no model calls
+docker run --rm -e ANTHROPIC_API_KEY pocock-smoke    # full run: pocock builds the spec (spends tokens)
+```
+
+The deterministic checks confirm that both agents load, that each can load the skills it needs and is refused the rest, and that the worker's git and `gh` denies hold. The full run has pocock carry out `implement-spec`. It then checks the integration branch, the worktree cleanup and the ticket statuses, and runs an acceptance script written against the spec, independent of the tests the workers wrote. Add `-e POCOCK_MODEL=<provider/model>` to run both agents on a different model.
 
 ## Credits
 
-All the hard work is in [Matt Pocock's skills](https://github.com/mattpocock/skills). These agents just compose them into an orchestrator/worker pattern with git worktree isolation.
+All the engineering discipline is in [Matt Pocock's skills](https://github.com/mattpocock/skills); their docs live at [aihero.dev/skills](https://www.aihero.dev/skills). These agents only wire them into OpenCode with an orchestrator/worker pattern and git worktree isolation.
 
 ## License
 

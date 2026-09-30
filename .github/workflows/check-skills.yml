@@ -1,0 +1,23 @@
+name: check-skills
+
+# Fails when the agents name a skill mattpocock/skills has renamed or removed,
+# or when the worker is allowed a skill that needs a person.
+# Weekly, because upstream changes without touching this repo.
+on:
+  push:
+    paths: ["agents/**", "scripts/check-skills.sh", ".github/workflows/check-skills.yml"]
+  pull_request:
+    paths: ["agents/**", "scripts/check-skills.sh", ".github/workflows/check-skills.yml"]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: scripts/check-skills.sh
