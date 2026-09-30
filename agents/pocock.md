@@ -98,7 +98,7 @@ Keep ticket branches under `ticket/`: git can't hold a branch `spec/x` and a bra
    git -C <repo> fetch origin
    git -C <repo> worktree add -b spec/<spec-slug> $WT/integration origin/<default-branch>
    ```
-   With no remote (a local-markdown tracker, offline), branch from the local default branch instead.
+   With no remote (a local-markdown tracker, offline), branch from the local default branch instead. Install the project's dependencies in `$WT/integration` once; worktrees don't share `node_modules` or virtualenvs.
 4. **Dispatch the frontier.** For each ticket on the frontier:
    ```bash
    git -C <repo> worktree add -b ticket/<spec-slug>/<ticket-id> $WT/tickets/<ticket-id> spec/<spec-slug>
