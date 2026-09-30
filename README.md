@@ -108,7 +108,6 @@ The agents are plain markdown; edit anything that doesn't fit.
 - **Model.** Both agents pin a model in their `model:` frontmatter. Change it, or delete the line to use your OpenCode default.
 - **Permissions.** OpenCode applies the **last** matching rule, so keep `"*"` first and exceptions after it. Patterns match each command's full text, which is why the worker denies both `git push*` and `git -C * push*`.
 - **Worktree root.** `/tmp/pocock-workers`. If you move it, update the `external_directory` rules in both agents and in your global config.
-- **task-observer.** If you have a `task-observer` skill installed, pocock loads it at session start; otherwise it skips that step.
 
 ## Keeping up with upstream
 

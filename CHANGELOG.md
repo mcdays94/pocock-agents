@@ -30,7 +30,6 @@ Tracks [`mattpocock/skills`](https://github.com/mattpocock/skills) `main` at `d8
   - It never pushes, stashes (`refs/stash` is shared by every worktree), runs `git worktree`, opens PRs or closes issues.
   - It now also flags tests that silently skip because a worktree lacks gitignored files.
 - **Glossary.** `GLOSSARY.md` (and `GLOSSARY-MAP.md`) replace `CONTEXT.md`. The agents still read `CONTEXT.md` and `UBIQUITOUS_LANGUAGE.md` in older repos.
-- **`task-observer` is optional.** It loads only if it's installed.
 - **`prd-to-plan` is gone.** `to-tickets` with a local-markdown tracker covers solo plans.
 - **New:** `scripts/check-skills.sh` and a weekly GitHub Action that fail when upstream renames or removes a skill the agents use; `test/smoke/`, a Docker smoke test.
 
