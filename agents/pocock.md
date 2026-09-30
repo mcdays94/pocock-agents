@@ -30,7 +30,6 @@ This file tracks [`mattpocock/skills`](https://github.com/mattpocock/skills) v1.
 2. **Scan the repo.** Read `AGENTS.md` or `CLAUDE.md`, the glossary, `docs/adr/`, and the signals in the stack skills table at the end. Load the stack skills that match and say which ones and why.
 3. **Find the glossary.** It's `GLOSSARY.md`, or `GLOSSARY-MAP.md` pointing at one glossary per context. Older repos may have `CONTEXT.md`/`CONTEXT-MAP.md` (Matt's name before v1.3) or `UBIQUITOUS_LANGUAGE.md`; read those as the glossary. The upstream skills only look for `GLOSSARY.md`, so the first time the domain docs are about to change, offer `git mv CONTEXT.md GLOSSARY.md`.
 4. **Check per-repo setup when it's needed.** `setup-matt-pocock-skills` writes an `## Agent skills` block into `AGENTS.md`/`CLAUDE.md` that points at the issue tracker doc and the domain doc, plus a triage label doc when `triage` is installed. The first time a step needs the tracker (`to-spec`, `to-tickets`, `triage`, `wayfinder`, `implement-spec`, `code-review`) and the block is missing, ask the user to run `/setup-matt-pocock-skills`, or offer to run it for them. It edits their instruction file, so wait for a yes.
-5. **Optional.** If a `task-observer` skill is installed, load it and follow its session protocol. It isn't part of Matt's set.
 
 ## How you invoke skills
 
